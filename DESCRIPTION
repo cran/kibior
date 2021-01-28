@@ -1,7 +1,7 @@
 Type: Package
-Date: 2020-11-05
+Date: 2021-01-27
 Package: kibior
-Version: 0.1.0
+Version: 0.1.1
 Encoding: UTF-8
 VignetteBuilder: knitr
 RoxygenNote: 7.1.1
@@ -31,10 +31,10 @@ Suggests: ggplot2 (>= 3.3.2), readr (>= 1.4.0), xml2 (>= 1.3.2), yaml
 License: GPL-2
 LazyData: true
 NeedsCompilation: no
-Packaged: 2020-11-13 14:56:47 UTC; root
+Packaged: 2021-01-28 01:23:32 UTC; root
 Author: Régis Ongaro-Carcy [aut, cre, ctb]
     (<https://orcid.org/0000-0002-0091-8810>),
   Arnaud Droit [fnd]
 Maintainer: Régis Ongaro-Carcy <regis.ongaro-carcy2@crchudequebec.ulaval.ca>
 Repository: CRAN
-Date/Publication: 2020-11-18 10:30:03 UTC
+Date/Publication: 2021-01-28 15:20:02 UTC

@@ -166,6 +166,11 @@ We will use *both Elasticsearch and R vocabulary*, which have similar notions:
 
 `kibior` uses [tibbles](https://tibble.tidyverse.org/) as main data representation.
 
+## Public instances
+
+The public `Kibio` instance is available at `kibio.compbio.ulaval.ca` port `80`.
+You can simply connect to it via the `get_kibio_instance()` method of `kibior`.
+
 
 ## Demonstration datasets
 
@@ -236,37 +241,137 @@ To install `docker-compose`, simply follow [the next steps](https://docs.docker.
 
 ## Run your own Elasticsearch instance
 
-The following is the docker-compose fashion. You can use the `docker` way by passing parameters, but it is verbose and not really needed here since we want something simple to use.
+We want something easy to use, so we use the following `docker-compose` fashion. 
+You can use the `docker` way by passing all parameters inline but it is verbose.
 
-Copy-paste these lines inside a "`single-es.yml`" file.
+> You can find the following described files in the `kibior` package, folder `inst/docker_conf`.
+
+
+### Elasticsearch configuration file
+
+Copy-paste these lines in a new `elasticsearch.yml` file.
 
 ```yml
-# "single-es.yml" file
-version: '2.4'
+cluster.name: "docker-cluster"
+network.host: 0.0.0.0
 
+# minimum_master_nodes need to be explicitly set when bound on a public IP
+# set to 1 to allow single node clusters
+# Details: https://github.com/elastic/elasticsearch/pull/17288
+discovery.zen.minimum_master_nodes: 1
+
+# Uncomment and tweak the following lines if you need to connect to remote instances
+# such as Kibio's or if you want to configure several disjoint local instances. 
+# This also allows to use KibioR `$copy()` and `$move()` methods with remote instances.
+# reindex.remote.whitelist: [
+#   "first_instance:9200", 
+#   "second_instance:9200",
+# ]
+```
+
+### DNS configuration file
+
+Copy-paste these lines in a new `resolv.conf` file if you need to connect to ES named services on the web.
+
+```conf
+nameserver 8.8.8.8      # Google's DNS resolver: use DNS if searching online ES named services
+nameserver 127.0.0.11   # local, might change
+options ndots:0
+options rotate
+options timeout:1
+```
+
+### Docker-compose configuration file 
+
+Copy-paste these lines inside a `single-es.yml` file.
+
+```yml
+version: '2.4'
 services:
+
+##  --------------------------
+##  If you need rstudio
+##  --------------------------
+
+  # rstudio4:
+  #   container_name: rstudio4
+  #   image: rocker/rstudio:4.0.3
+  #   environment:
+  #   - PASSWORD=myrstudio
+  #   - USERID=1000
+  #   #
+  #   volumes:
+  #   - type: bind
+  #     source: <path_for_RStudio_data_folder_on_your_computer>
+  #     target: /work/rstudio/data    # we create a folder inside the container
+  #     read_only: false
+  #   #
+  #   ports:
+  #   - 8787:8787
+  #   networks:
+  #   - kibiornet
+  #   # cpu and ram constraints
+  #   cpu_count: 1
+  #   cpu_percent: 75
+  #   cpus: 0.75
+  #   memswap_limit: 0
+  #   mem_reservation: 256m
+  #   mem_limit: 6g
+
+##  --------------------------
+##  If you need a bash cli + R cli
+##  See https://hub.docker.com/u/rocker for more versions 
+##  with preinstalled material (e.g. tidyverse)
+##  --------------------------
+
+  # r4:
+  #   container_name: r4
+  #   image: roncar/kibior-env:4.0.3        # pre-configured R version 4.0.3 with Kibior installed
+  #   stdin_open: true
+  #   tty: true
+  #   entrypoint: "/bin/bash"
+  #   #
+  #   volumes:
+  #   - type: bind
+  #     source: <path_for_R_data_folder_on_your_computer>
+  #     target: /work/r/data    # we create a folder inside the container
+  #     read_only: false
+  #   - type: bind
+  #     source: ./resolv.conf
+  #     target: /etc/resolv.conf
+  #     read_only: false
+  #   #
+  #   networks:
+  #   - kibiornet
+  #   # cpu and ram constraints
+  #   cpu_count: 1
+  #   cpu_percent: 75
+  #   cpus: 0.75
+  #   memswap_limit: 0
+  #   mem_reservation: 256m
+  #   mem_limit: 6g
+
+##  --------------------------
+##  Elasticsearch container
+##  --------------------------
 
   elasticsearch:
     # this configuration will run a service called "elasticsearch"
     container_name: elasticsearch
-
-    # the elasticsearch image used will be version 7.5.1
+    # the elasticsearch image used will be version 7
     # but you can use another version, such as 6.8.6
-    image: docker.elastic.co/elasticsearch/elasticsearch:7.5.1
-
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.10.2
     # defines env var
     # last line tells us java will use 512MB
     # if you need more, change it for 2GB, for instance
     # "ES_JAVA_OPTS=-Xms2g -Xmx2g"
     environment:
-      - discovery.type=single-node
-      - bootstrap.memory_lock=true
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-
+    - discovery.type=single-node
+    - bootstrap.memory_lock=true
+    - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
     # strict limit to 1GB of RAM
     mem_limit: 1g
     memswap_limit: 0
-
     # lock memory
     ulimits:
       memlock:
@@ -275,35 +380,207 @@ services:
       nofile:
         soft: 65536
         hard: 65536
-
-    # init a local volume named "local_es"
+    # bind files and folders of your system with those inside of the container 
     volumes:
-      - local_es:/usr/share/elasticsearch/data
-
+    # ES data folder
+    - type: bind
+      source: <path_for_es_data_folder_on_your_computer>
+      target: /usr/share/elasticsearch/data
+      read_only: false
+    # ES configurations
+    - type: bind
+      source: ./elasticsearch.yml
+      target: /usr/share/elasticsearch/config/elasticsearch.yml
+      read_only: true
     # export port to access Elasticsearch service from outside docker
-    ports:
-      - 9200:9200
+    ports: 
+    - 9200:9200
+    # networks managed by docker 
+    networks:
+    - kibiornet
 
-# volumes desclaration
-volumes:
-    local_es:
+# network declaration
+networks:
+  kibiornet:
 ```
 
-Now, run the configuration to launch the service with:
+### Run the services
+
+Now, run the configuration to launch the service(s) with:
+
+```bash
+# run services (daemonized)
+➜ docker-compose -f single-es.yml up -d
+Starting elasticsearch ... done
+
+#  see the current docker processes
+➜ docker ps
+CONTAINER ID   IMAGE                                                  COMMAND                  CREATED          STATUS         PORTS                              NAMES
+40814036d980   docker.elastic.co/elasticsearch/elasticsearch:7.10.2   "/tini -- /usr/local…"   30 minutes ago   Up 5 seconds   0.0.0.0:9200->9200/tcp, 9300/tcp   elasticsearch
+
+# curl
+➜ curl -X GET localhost:9200
+{
+  "name" : "40814036d980",
+  "cluster_name" : "docker-cluster",
+  "cluster_uuid" : "InZqVTNiTK6idAWrEweWDg",
+  "version" : {
+    "number" : "7.10.2",
+    "build_flavor" : "default",
+    "build_type" : "docker",
+    "build_hash" : "747e1cc71def077253878a59143c1f785afa92b9",
+    "build_date" : "2021-01-13T00:42:12.435326Z",
+    "build_snapshot" : false,
+    "lucene_version" : "8.7.0",
+    "minimum_wire_compatibility_version" : "6.8.0",
+    "minimum_index_compatibility_version" : "6.0.0-beta1"
+  },
+  "tagline" : "You Know, for Search"
+}
+```
+
+The Elasticsearch service will be accessible. 
+You can also interact with it on any browser.
+Check `http://localhost:9200`. 
+
+## R session
+
+### I have R already installed on my computer
+
+If you have `R` installed on your computer, simply use it with a `kibior` instance pointing at `localhost:9200`.
+Since it is the default configuration, you will only need this to work:
+
+```r
+# In your R session
+kc <- Kibior$new()
+
+# or explicitely
+kc <- Kibior$new(host="localhost", port=9200)
+```
+
+
+### I do not already have R installed on my computer
+
+If you do not have `R` installed on your computer, you can:
+
+1. Install it, or 
+2. Use `Docker` and `docker-compose`.
+
+The following sections guide you to use the R cli or the RStudio container.
+Both have `kibior` and its dependencies installed, but you can choose to use a clean `R` environment instead (i.e. `rocker` containers).
+
+
+
+#### R command-line interface (R cli)
+
+Steps:
+
+1. Uncomment the R cli section (i.e. section "If you need a bash cli + R cli") in the `es-single.yml` file.
+2. Put a volume path if you need to work on specific files.
+3. Use the same command to launch the service.
+4. Use the R command-line interface inside the container.
+
+
+```bash
+# run services (daemonized)
+➜ docker-compose -f single-es.yml up -d
+elasticsearch is up-to-date
+Creating r4 ... done
+
+#  see the current docker processes
+➜ docker ps
+CONTAINER ID   IMAGE                                                  COMMAND                  CREATED          STATUS          PORTS                              NAMES
+0f1afd07f58a   roncar/kibior-env:4.0.3                                "/bin/bash"              4 minutes ago    Up 4 minutes                                       r4
+40814036d980   docker.elastic.co/elasticsearch/elasticsearch:7.10.2   "/tini -- /usr/local…"   4 minutes ago    Up 4 minutes    0.0.0.0:9200->9200/tcp, 9300/tcp   elasticsearch
+
+# open an interactive bash inside the R container (see previous command container ID)
+➜ docker exec -it 0f1afd07f58a bash
+
+# inside the R container, query the ES container (with its container name)
+root@0f1afd07f58a:/$ curl -X GET "http://elasticsearch:9200"
+{
+  "name" : "20f2383b909a",
+  "cluster_name" : "docker-cluster",
+  "cluster_uuid" : "InZqVTNiTK6idAWrEweWDg",
+  "version" : {
+    "number" : "7.10.2",
+    "build_flavor" : "default",
+    "build_type" : "docker",
+    "build_hash" : "747e1cc71def077253878a59143c1f785afa92b9",
+    "build_date" : "2021-01-13T00:42:12.435326Z",
+    "build_snapshot" : false,
+    "lucene_version" : "8.7.0",
+    "minimum_wire_compatibility_version" : "6.8.0",
+    "minimum_index_compatibility_version" : "6.0.0-beta1"
+  },
+  "tagline" : "You Know, for Search"
+}
+
+# inside the R container, run R cli
+root@0f1afd07f58a:/$ R --vanilla
+
+R version 4.0.3 (2020-10-10) -- "Bunny-Wunnies Freak Out"
+Copyright (C) 2020 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> library(kibior)
+# Here you can directly load kibior as it is pre-installed inside the container.
 
 ```
-docker-compose -f /your/path/to/single-es.yml up -d
+
+This container comes with `R` version `4.0.3` and `kibior` package and its dependencies pre-installed.
+If you need a clean container with only `R`, you can use the `rocker/r-ver:4.0.3` image instead.
+
+
+
+#### RStudio
+
+Steps:
+
+1. Uncomment the RStudio section (i.e. section "If you need rstudio") in the `es-single.yml` file.
+2. Put a volume path if you need to work on specific files.
+3. Use the same command to launch the service.
+4. Use RStudio interface inside your web browser with login/password you configure in the RStudio section.
+
+```bash
+# run services (daemonized)
+➜ docker-compose -f single-es.yml up -d
+elasticsearch is up-to-date
+Creating rstudio4 ... done
+
+#  see the current docker processes
+➜ docker ps
+CONTAINER ID   IMAGE                                                  COMMAND                  CREATED         STATUS         PORTS                              NAMES
+62344a365b70   roncar/kibior-rstudio:4.0.3                            "/init"                  7 seconds ago   Up 5 seconds   0.0.0.0:8787->8787/tcp             rstudio4
+111ebcf0d5c4   docker.elastic.co/elasticsearch/elasticsearch:7.10.2   "/tini -- /usr/local…"   7 seconds ago   Up 5 seconds   0.0.0.0:9200->9200/tcp, 9300/tcp   elasticsearch
 ```
 
-The Elasticsearch service will be accessible. Check `http://localhost:9200`. 
-You can test it on any browser, it will print out something like that:
+Connect with your web browser at `localhost:8787` with login/password that where configured in the `es-single.yml` file.
 
-<center>
-![elasticsearch-docker-launched](./img/elasticsearch_single_node.png)
-</center>
 
-Once done, you can now use this instance as your own data repository with `kibior` and R:
+![](./img/kibior-rstudio.png)
 
+
+This container comes with `RStudio` version `4.0.3` and `kibior` package and its dependencies pre-installed.
+If you need a clean container with only `RStudio`, you can use the `rocker/rstudio:4.0.3` image instead.
+
+
+
+## Initialization
+
+You can use several type of initialization:
 
 ```r
 #> Initiate a remote connection
@@ -324,8 +601,14 @@ kc_local <- kibior$new(user = "elastic", pwd = "changeme")
 
 To stop the service, simply enter the command:
 
-```
-docker-compose -f /your/path/to/single-es.yml down
+```bash
+# stop all services
+➜ docker-compose -f single-es.yml down
+Stopping r4            ... done
+Stopping elasticsearch ... done
+Removing r4            ... done
+Removing elasticsearch ... done
+Removing network docker_kibior_test_kibiornet
 ```
 
 
@@ -398,10 +681,9 @@ If not already taken, the given index name will be created automatically before 
 
 > Important points: 
 >
-> 1. `$push()` automatically send data to Elasticsearch server, which *needs* unique IDs.
+> 1. `$push()` automatically send data to Elasticsearch server, which *needs* unique IDs. One can define its own IDs using the `id_col` parameter which requires a column name that has unique elements.
 > 2. If not defined, `kibior` will attribute a `kid` column counter as unique IDs (default). 
-> 3. One can define its own IDs using the `id_col` parameter which requires a column name that has unique elements.
-> 4. `$push()` expects well-formatted data, mainly in a data.frame or derivative structure such as tibble.
+> 3. `$push()` expects well-formatted data, mainly in a data.frame or derivative structure such as tibble.
 
 See [`Push modes`](#push-modes) in `Advanced usage` section for more information.
 
@@ -2069,9 +2351,9 @@ kc$columns("iris")
 
 | Software        | Version                           |
 |-----------------|---------------------------------- |
-| `Elasticsearch` | `6.8`, `7.5`, `7.8`               |
-| `R`             | `3.6.1`, `4.0.2`                  |
-| `RStudio`       | `1.2.5001, build 93, 7b3fe265`    |
+| `Elasticsearch` | `6.8`, `7.5`, `7.8`, `7.9`, `7.10`|
+| `R`             | `3.6.1`, `4.0.2`, `4.0.3`         |
+| `RStudio`       | `1.2.5001, build 93, 7b3fe265`, `1.4.1103, build "Wax Begonia", 458706c3`    |
 
 
 This vignette has been built using the following session:
